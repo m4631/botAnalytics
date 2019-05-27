@@ -6,8 +6,8 @@
             "defaultValue": "process_questions",
             "type": "String"
         },
-        "connections_applicationinsights_1_externalid": {
-            "defaultValue": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/resourceGroups/qna/providers/Microsoft.Web/connections/applicationinsights-1",
+        "connections_applicationinsights_externalid": {
+            "defaultValue": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/resourceGroups/qna/providers/Microsoft.Web/connections/applicationinsights",
             "type": "String"
         },
         "connections_azureblob_externalid": {
@@ -159,7 +159,7 @@
                                 "body": "customEvents | where name == \"Bot-Interaction\" | project customDimensions",
                                 "host": {
                                     "connection": {
-                                        "name": "@parameters('$connections')['applicationinsights_1']['connectionId']"
+                                        "name": "@parameters('$connections')['applicationinsights']['connectionId']"
                                     }
                                 },
                                 "method": "post",
@@ -176,9 +176,9 @@
                 "parameters": {
                     "$connections": {
                         "value": {
-                            "applicationinsights_1": {
-                                "connectionId": "[parameters('connections_applicationinsights_1_externalid')]",
-                                "connectionName": "applicationinsights-1",
+                            "applicationinsights": {
+                                "connectionId": "[parameters('connections_applicationinsights_externalid')]",
+                                "connectionName": "applicationinsights",
                                 "id": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/providers/Microsoft.Web/locations/eastus2/managedApis/applicationinsights"
                             },
                             "azureblob": {
