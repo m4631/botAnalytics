@@ -1,0 +1,200 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_process_questions_name": {
+            "defaultValue": "process_questions",
+            "type": "String"
+        },
+        "connections_applicationinsights_1_externalid": {
+            "defaultValue": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/resourceGroups/qna/providers/Microsoft.Web/connections/applicationinsights-1",
+            "type": "String"
+        },
+        "connections_azureblob_externalid": {
+            "defaultValue": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/resourceGroups/qna/providers/Microsoft.Web/connections/azureblob",
+            "type": "String"
+        },
+        "connections_cognitiveservicestextanalytics_externalid": {
+            "defaultValue": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/resourceGroups/qna/providers/Microsoft.Web/connections/cognitiveservicestextanalytics",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_process_questions_name')]",
+            "location": "eastus2",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "Hour",
+                                "interval": 1
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "For_each_2": {
+                            "foreach": "@body('Run_Analytics_query')?['value']",
+                            "actions": {
+                                "Create_blob": {
+                                    "runAfter": {
+                                        "Key_Phrases": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": "@{body('Parse_JSON')?['Question']}~@{replace(body('Parse_JSON')?['Response'], '\n', '')}~@{body('Detect_Sentiment')?['score']}~@{body('Key_Phrases')?['keyPhrases'][0]}~@{body('Key_Phrases')?['keyPhrases'][1]}~@{body('Key_Phrases')?['keyPhrases'][2]}",
+                                        "headers": {
+                                            "Content-Type": "text/html\r"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/datasets/default/files",
+                                        "queries": {
+                                            "folderPath": "qnabot",
+                                            "name": "doc-@{rand(0,100000000)}-@{utcNow()}",
+                                            "queryParametersSingleEncoded": true
+                                        }
+                                    },
+                                    "runtimeConfiguration": {
+                                        "contentTransfer": {
+                                            "transferMode": "Chunked"
+                                        }
+                                    }
+                                },
+                                "Detect_Sentiment": {
+                                    "runAfter": {
+                                        "Parse_JSON": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "language": "es",
+                                            "text": "@body('Parse_JSON')?['Question']"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['cognitiveservicestextanalytics']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/sentiment"
+                                    }
+                                },
+                                "Key_Phrases": {
+                                    "runAfter": {
+                                        "Detect_Sentiment": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection",
+                                    "inputs": {
+                                        "body": {
+                                            "language": "es",
+                                            "text": "@body('Parse_JSON')?['Question']"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['cognitiveservicestextanalytics']['connectionId']"
+                                            }
+                                        },
+                                        "method": "post",
+                                        "path": "/keyPhrases"
+                                    }
+                                },
+                                "Parse_JSON": {
+                                    "runAfter": {},
+                                    "type": "ParseJson",
+                                    "inputs": {
+                                        "content": "@items('For_each_2')?['customDimensions']",
+                                        "schema": {
+                                            "properties": {
+                                                "AspNetCoreEnvironment": {
+                                                    "type": "string"
+                                                },
+                                                "Question": {
+                                                    "type": "string"
+                                                },
+                                                "Response": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Run_Analytics_query": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Run_Analytics_query": {
+                            "runAfter": {},
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": "customEvents | where name == \"Bot-Interaction\" | project customDimensions",
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['applicationinsights_1']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/api/QueryDraft",
+                                "queries": {
+                                    "timerange": "Last hour",
+                                    "version": "2"
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "applicationinsights_1": {
+                                "connectionId": "[parameters('connections_applicationinsights_1_externalid')]",
+                                "connectionName": "applicationinsights-1",
+                                "id": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/providers/Microsoft.Web/locations/eastus2/managedApis/applicationinsights"
+                            },
+                            "azureblob": {
+                                "connectionId": "[parameters('connections_azureblob_externalid')]",
+                                "connectionName": "azureblob",
+                                "id": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/providers/Microsoft.Web/locations/eastus2/managedApis/azureblob"
+                            },
+                            "cognitiveservicestextanalytics": {
+                                "connectionId": "[parameters('connections_cognitiveservicestextanalytics_externalid')]",
+                                "connectionName": "cognitiveservicestextanalytics",
+                                "id": "/subscriptions/72c67171-e4bd-42ef-a0fb-9e3a65082c2c/providers/Microsoft.Web/locations/eastus2/managedApis/cognitiveservicestextanalytics"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
